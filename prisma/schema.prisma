@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  address   String
+  notes     String?
+  jobs      Job[]    // Add this line to create the reverse relation
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Job {
+  id                String     @id @default(uuid())
+  customerId        String
+  customer          Customer   @relation(fields: [customerId], references: [id])
+  status            String
+  scheduledAt       DateTime
+  address           String
+  deliveryFee       Float
+  installFee        Float
+  monthlyRentalRate Float
+  notes             String?
+  components        Component[]
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+}
+
+model Component {
+  id       String   @id
+  type     String
+  size     String
+  status   String   @default("AVAILABLE")
+  location String   @default("Warehouse")
+  jobs     Job[]
+}
+
+model PricingVariables {
+  id                    Int     @id @default(1)
+  trailerRentalCost     Float
+  perMileCost           Float
+  rentalRatePerFoot     Float
+  installRatePerSection Float
+  installRatePerLanding Float
+}
