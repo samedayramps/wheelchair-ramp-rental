@@ -5,6 +5,12 @@ import CustomerSelect from './CustomerSelect';
 import ComponentSelect from './ComponentSelect';
 import CalculatedFields from './CalculatedFields';
 
+interface Component {
+  id: string;
+  type: string;
+  size: string;
+}
+
 interface JobFormProps {
   initialData?: {
     customerId: string;
@@ -27,7 +33,7 @@ interface JobFormProps {
     monthlyRentalRate: number;
     notes: string;
     components: string[];
-  }) => void;
+  }) => Promise<void>;
   onDelete?: () => void;
   customers: { id: string; name: string; address: string }[];
   availableComponents: { id: string; type: string; size: string; status: string; location: string; }[];

@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
-const InstallationTimer = ({ onComplete }) => {
+interface InstallationTimerProps {
+  onComplete: (startTime: Date, endTime: Date) => void;
+}
+
+const InstallationTimer: React.FC<InstallationTimerProps> = ({ onComplete }) => {
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [endTime, setEndTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -22,7 +26,9 @@ const InstallationTimer = ({ onComplete }) => {
   const handleEndInstallation = () => {
     const end = new Date();
     setEndTime(end);
-    onComplete(startTime, end);
+    if (startTime) {
+      onComplete(startTime, end);
+    }
   };
 
   const formatTime = (seconds: number) => {

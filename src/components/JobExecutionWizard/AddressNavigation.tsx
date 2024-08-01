@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 
-const AddressNavigation = ({ job, onComplete }) => {
+interface AddressNavigationProps {
+  job: {
+    address: string;
+  };
+  onComplete: (arrivalTime: Date) => void;
+}
+
+const AddressNavigation: React.FC<AddressNavigationProps> = ({ job, onComplete }) => {
   const [arrived, setArrived] = useState(false);
 
   const handleCopyAddress = () => {

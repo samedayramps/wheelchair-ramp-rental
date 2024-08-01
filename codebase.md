@@ -527,6 +527,61 @@ export const authOptions: NextAuthOptions = {
 };
 ```
 
+# src/components/UpcomingJobs.tsx
+
+```tsx
+import React from 'react';
+import Link from 'next/link';
+import { Job } from '@prisma/client';
+
+interface UpcomingJobsProps {
+  jobs: (Job & { customer: { name: string } })[];
+}
+
+const UpcomingJobs: React.FC<UpcomingJobsProps> = ({ jobs }) => {
+  return (
+    <div className="bg-white shadow rounded-lg p-6">
+      <h2 className="text-xl font-semibold mb-4">Upcoming Jobs</h2>
+      {jobs.length === 0 ? (
+        <p>No upcoming jobs scheduled.</p>
+      ) : (
+        <ul className="space-y-4">
+          {jobs.map((job) => (
+            <li key={job.id} className="border-b pb-2">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="font-medium">{job.customer.name}</p>
+                  <p className="text-sm text-gray-600">{job.address}</p>
+                  <p className="text-sm text-gray-600">
+                    {new Date(job.scheduledAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="space-x-2">
+                  <Link
+                    href={`/jobs/${job.id}/edit`}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm"
+                  >
+                    Edit
+                  </Link>
+                  <Link
+                    href={`/jobs/${job.id}/execute`}
+                    className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+                  >
+                    Begin Job
+                  </Link>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+export default UpcomingJobs;
+```
+
 # src/components/PricingVariables.tsx
 
 ```tsx
@@ -919,8 +974,6 @@ export default function CustomerSelect({ control, customers }: CustomerSelectPro
 # src/components/CustomerForm.tsx
 
 ```tsx
-/// <reference types="@types/google.maps" />
-
 import React, { useState, useEffect, useRef } from 'react';
 
 interface CustomerFormProps {
@@ -1289,6 +1342,7 @@ export default function CalculatedFields({ control }: CalculatedFieldsProps) {
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { JobStatus } from "@/lib/constants";
+import UpcomingJobs from "@/components/UpcomingJobs";
 
 async function getDashboardData() {
   const customerCount = await prisma.customer.count();
@@ -1305,11 +1359,28 @@ async function getDashboardData() {
     }
   });
 
-  return { customerCount, activeJobCount, availableComponentCount };
+  const upcomingJobs = await prisma.job.findMany({
+    where: {
+      status: JobStatus.SCHEDULED,
+    },
+    orderBy: {
+      scheduledAt: 'asc',
+    },
+    take: 5,
+    include: {
+      customer: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  return { customerCount, activeJobCount, availableComponentCount, upcomingJobs };
 }
 
 export default async function DashboardPage() {
-  const { customerCount, activeJobCount, availableComponentCount } = await getDashboardData();
+  const { customerCount, activeJobCount, availableComponentCount, upcomingJobs } = await getDashboardData();
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -1318,6 +1389,9 @@ export default async function DashboardPage() {
         <DashboardCard title="Total Customers" value={customerCount} />
         <DashboardCard title="Active Jobs" value={activeJobCount} />
         <DashboardCard title="Available Components" value={availableComponentCount} />
+      </div>
+      <div className="mb-8">
+        <UpcomingJobs jobs={upcomingJobs} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <QuickActionCard title="Customers" actions={[
@@ -1469,6 +1543,354 @@ This is a binary file of the type: Binary
 provider = "sqlite"
 ```
 
+# src/components/JobExecutionWizard/index.tsx
+
+```tsx
+import React, { useState } from 'react';
+import ComponentCheckList from './ComponentCheckList';
+import CustomerNotification from './CustomerNotification';
+import AddressNavigation from './AddressNavigation';
+import InstallationTimer from './InstallationTimer';
+import PhotoCapture from './PhotoCapture';
+
+const steps = [
+  'Component Check',
+  'Customer Notification',
+  'Navigation',
+  'Installation',
+  'Photo Capture',
+];
+
+const JobExecutionWizard = ({ job }) => {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [executionData, setExecutionData] = useState({
+    componentsLoaded: false,
+    customerNotified: false,
+    arrivalTime: null,
+    installationStartTime: null,
+    installationEndTime: null,
+    photos: [],
+  });
+
+  const handleNext = () => {
+    if (currentStep < steps.length - 1) {
+      setCurrentStep(currentStep + 1);
+    } else {
+      handleJobCompletion();
+    }
+  };
+
+  const handleJobCompletion = async () => {
+    // TODO: Implement API call to update job status and save execution data
+    console.log('Job completed', executionData);
+  };
+
+  const renderStep = () => {
+    switch (currentStep) {
+      case 0:
+        return <ComponentCheckList job={job} onComplete={() => setExecutionData({ ...executionData, componentsLoaded: true })} />;
+      case 1:
+        return <CustomerNotification job={job} onComplete={() => setExecutionData({ ...executionData, customerNotified: true })} />;
+      case 2:
+        return <AddressNavigation job={job} onComplete={(arrivalTime) => setExecutionData({ ...executionData, arrivalTime })} />;
+      case 3:
+        return <InstallationTimer onComplete={(startTime, endTime) => setExecutionData({ ...executionData, installationStartTime: startTime, installationEndTime: endTime })} />;
+      case 4:
+        return <PhotoCapture onComplete={(photos) => setExecutionData({ ...executionData, photos })} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-4">
+        {steps.map((step, index) => (
+          <span
+            key={step}
+            className={`mr-2 ${
+              index === currentStep ? 'font-bold' : 'text-gray-500'
+            }`}
+          >
+            {step}
+            {index < steps.length - 1 && ' >'}
+          </span>
+        ))}
+      </div>
+      {renderStep()}
+      <button
+        onClick={handleNext}
+        className="mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+      >
+        {currentStep === steps.length - 1 ? 'Complete Job' : 'Next Step'}
+      </button>
+    </div>
+  );
+};
+
+export default JobExecutionWizard;
+```
+
+# src/components/JobExecutionWizard/PhotoCapture.tsx
+
+```tsx
+import React, { useState, useRef } from 'react';
+
+const PhotoCapture = ({ onComplete }) => {
+  const [photos, setPhotos] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotos(prev => [...prev, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleComplete = () => {
+    onComplete(photos);
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Photo Capture</h2>
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleCapture}
+        ref={fileInputRef}
+        className="hidden"
+      />
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded"
+      >
+        Take Photo
+      </button>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        {photos.map((photo, index) => (
+          <img key={index} src={photo} alt={`Captured ${index + 1}`} className="w-full h-auto" />
+        ))}
+      </div>
+      {photos.length > 0 && (
+        <button
+          onClick={handleComplete}
+          className="mt-4 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded"
+        >
+          Complete Photo Capture
+        </button>
+      )}
+    </div>
+  );
+};
+
+export default PhotoCapture;
+```
+
+# src/components/JobExecutionWizard/InstallationTimer.tsx
+
+```tsx
+import React, { useState, useEffect } from 'react';
+
+const InstallationTimer = ({ onComplete }) => {
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [endTime, setEndTime] = useState<Date | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (startTime && !endTime) {
+      interval = setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - startTime.getTime()) / 1000));
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [startTime, endTime]);
+
+  const handleStartInstallation = () => {
+    setStartTime(new Date());
+  };
+
+  const handleEndInstallation = () => {
+    const end = new Date();
+    setEndTime(end);
+    onComplete(startTime, end);
+  };
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Installation Timer</h2>
+      <p className="text-2xl font-mono mb-4">{formatTime(elapsedTime)}</p>
+      {!startTime && (
+        <button
+          onClick={handleStartInstallation}
+          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded"
+        >
+          Start Installation
+        </button>
+      )}
+      {startTime && !endTime && (
+        <button
+          onClick={handleEndInstallation}
+          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded"
+        >
+          End Installation
+        </button>
+      )}
+    </div>
+  );
+};
+
+export default InstallationTimer;
+```
+
+# src/components/JobExecutionWizard/CustomerNotification.tsx
+
+```tsx
+import React, { useState } from 'react';
+
+const CustomerNotification = ({ job, onComplete }) => {
+  const [notificationSent, setNotificationSent] = useState(false);
+
+  const sendNotification = async () => {
+    try {
+      // TODO: Implement actual notification logic
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulating API call
+      setNotificationSent(true);
+      onComplete();
+    } catch (error) {
+      console.error('Failed to send notification:', error);
+    }
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Customer Notification</h2>
+      <p>Customer: {job.customer.name}</p>
+      <p>Address: {job.address}</p>
+      <button
+        onClick={sendNotification}
+        disabled={notificationSent}
+        className={`mt-4 px-4 py-2 rounded ${
+          notificationSent ? 'bg-gray-300' : 'bg-blue-500 hover:bg-blue-600'
+        } text-white`}
+      >
+        {notificationSent ? 'Notification Sent' : 'Send Notification'}
+      </button>
+    </div>
+  );
+};
+
+export default CustomerNotification;
+```
+
+# src/components/JobExecutionWizard/ComponentCheckList.tsx
+
+```tsx
+import React, { useState } from 'react';
+
+const ComponentCheckList = ({ job, onComplete }) => {
+  const [checked, setChecked] = useState<string[]>([]);
+
+  const handleCheck = (componentId: string) => {
+    setChecked(prev => 
+      prev.includes(componentId) 
+        ? prev.filter(id => id !== componentId)
+        : [...prev, componentId]
+    );
+  };
+
+  const allChecked = job.components.every(component => checked.includes(component.id));
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Component Check</h2>
+      <ul className="space-y-2">
+        {job.components.map(component => (
+          <li key={component.id} className="flex items-center">
+            <input
+              type="checkbox"
+              id={component.id}
+              checked={checked.includes(component.id)}
+              onChange={() => handleCheck(component.id)}
+              className="mr-2"
+            />
+            <label htmlFor={component.id}>{component.type} - {component.size}</label>
+          </li>
+        ))}
+      </ul>
+      <button
+        onClick={() => onComplete()}
+        disabled={!allChecked}
+        className={`mt-4 px-4 py-2 rounded ${
+          allChecked ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-300'
+        } text-white`}
+      >
+        All Components Loaded
+      </button>
+    </div>
+  );
+};
+
+export default ComponentCheckList;
+```
+
+# src/components/JobExecutionWizard/AddressNavigation.tsx
+
+```tsx
+import React, { useState } from 'react';
+
+const AddressNavigation = ({ job, onComplete }) => {
+  const [arrived, setArrived] = useState(false);
+
+  const handleCopyAddress = () => {
+    navigator.clipboard.writeText(job.address);
+  };
+
+  const handleArrived = () => {
+    const arrivalTime = new Date();
+    setArrived(true);
+    onComplete(arrivalTime);
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Navigation</h2>
+      <p>Address: {job.address}</p>
+      <button
+        onClick={handleCopyAddress}
+        className="mt-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded"
+      >
+        Copy Address
+      </button>
+      <button
+        onClick={handleArrived}
+        disabled={arrived}
+        className={`mt-4 px-4 py-2 rounded ${
+          arrived ? 'bg-gray-300' : 'bg-green-500 hover:bg-green-600'
+        } text-white`}
+      >
+        {arrived ? 'Arrived' : 'Mark as Arrived'}
+      </button>
+    </div>
+  );
+};
+
+export default AddressNavigation;
+```
+
 # src/app/pricing/page.tsx
 
 ```tsx
@@ -1555,6 +1977,155 @@ export default function PricingPage() {
           <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-blue-500"></div>
         </div>
       )}
+    </div>
+  );
+}
+```
+
+# src/app/customers/page.tsx
+
+```tsx
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import Link from "next/link";
+import { useRouter } from 'next/navigation';
+
+interface Customer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  notes: string;
+}
+
+export default function CustomersPage() {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [totalPages, setTotalPages] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const router = useRouter();
+
+  const fetchCustomers = useCallback(async () => {
+    try {
+      const queryParams = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: '10',
+        sortBy,
+        sortOrder,
+      });
+
+      const response = await fetch(`/api/customers?${queryParams}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch customers');
+      }
+      const data = await response.json();
+      setCustomers(data.customers);
+      setTotalPages(data.totalPages);
+    } catch (err) {
+      setError('Failed to load customers. Please try again.');
+      console.error(err);
+    }
+  }, [currentPage, sortBy, sortOrder]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
+
+  const handleRowClick = (id: string) => {
+    router.push(`/customers/${id}/edit`);
+  };
+
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+  };
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Customers</h1>
+        <Link href="/customers/new" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+          Add New Customer
+        </Link>
+      </div>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
+      <div className="bg-white shadow-md rounded-lg overflow-hidden">
+        <div className="overflow-x-auto max-h-[70vh]">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('name')}
+                >
+                  Name {sortBy === 'name' && (sortOrder === 'asc' ? '▲' : '▼')}
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('email')}
+                >
+                  Email {sortBy === 'email' && (sortOrder === 'asc' ? '▲' : '▼')}
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('phone')}
+                >
+                  Phone {sortBy === 'phone' && (sortOrder === 'asc' ? '▲' : '▼')}
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => handleSort('address')}
+                >
+                  Address {sortBy === 'address' && (sortOrder === 'asc' ? '▲' : '▼')}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {customers.map((customer) => (
+                <tr 
+                  key={customer.id} 
+                  onClick={() => handleRowClick(customer.id)}
+                  className="hover:bg-gray-100 cursor-pointer"
+                >
+                  <td className="px-6 py-4 whitespace-nowrap">{customer.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{customer.email}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{customer.phone}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{customer.address}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="mt-4 flex justify-between items-center">
+        <button
+          onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+          disabled={currentPage === 1}
+          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded disabled:bg-gray-300"
+        >
+          Previous
+        </button>
+        <span>Page {currentPage} of {totalPages}</span>
+        <button
+          onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
+          disabled={currentPage === totalPages}
+          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded disabled:bg-gray-300"
+        >
+          Next
+        </button>
+      </div>
     </div>
   );
 }
@@ -1943,168 +2514,11 @@ export default function InventoryPage() {
 }
 ```
 
-# src/app/customers/page.tsx
-
-```tsx
-'use client';
-
-import { useState, useEffect, useCallback } from 'react';
-import Link from "next/link";
-import { useRouter } from 'next/navigation';
-
-interface Customer {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  notes: string;
-}
-
-export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [totalPages, setTotalPages] = useState(1);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [sortBy, setSortBy] = useState('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const router = useRouter();
-
-  const fetchCustomers = useCallback(async () => {
-    try {
-      const queryParams = new URLSearchParams({
-        page: currentPage.toString(),
-        limit: '10',
-        sortBy,
-        sortOrder,
-      });
-
-      const response = await fetch(`/api/customers?${queryParams}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch customers');
-      }
-      const data = await response.json();
-      setCustomers(data.customers);
-      setTotalPages(data.totalPages);
-    } catch (err) {
-      setError('Failed to load customers. Please try again.');
-      console.error(err);
-    }
-  }, [currentPage, sortBy, sortOrder]);
-
-  useEffect(() => {
-    fetchCustomers();
-  }, [fetchCustomers]);
-
-  const handleRowClick = (id: string) => {
-    router.push(`/customers/${id}/edit`);
-  };
-
-  const handleSort = (column: string) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(column);
-      setSortOrder('asc');
-    }
-  };
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Customers</h1>
-        <Link href="/customers/new" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
-          Add New Customer
-        </Link>
-      </div>
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <span className="block sm:inline">{error}</span>
-        </div>
-      )}
-      <div className="bg-white shadow-md rounded-lg overflow-hidden">
-        <div className="overflow-x-auto max-h-[70vh]">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('name')}
-                >
-                  Name {sortBy === 'name' && (sortOrder === 'asc' ? '▲' : '▼')}
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('email')}
-                >
-                  Email {sortBy === 'email' && (sortOrder === 'asc' ? '▲' : '▼')}
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('phone')}
-                >
-                  Phone {sortBy === 'phone' && (sortOrder === 'asc' ? '▲' : '▼')}
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('address')}
-                >
-                  Address {sortBy === 'address' && (sortOrder === 'asc' ? '▲' : '▼')}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {customers.map((customer) => (
-                <tr 
-                  key={customer.id} 
-                  onClick={() => handleRowClick(customer.id)}
-                  className="hover:bg-gray-100 cursor-pointer"
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">{customer.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">{customer.email}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">{customer.phone}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">{customer.address}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div className="mt-4 flex justify-between items-center">
-        <button
-          onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
-          disabled={currentPage === 1}
-          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded disabled:bg-gray-300"
-        >
-          Previous
-        </button>
-        <span>Page {currentPage} of {totalPages}</span>
-        <button
-          onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
-          disabled={currentPage === totalPages}
-          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded disabled:bg-gray-300"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
-}
-```
-
-# prisma/migrations/20240801190043_add_jobs_to_customer/migration.sql
+# prisma/migrations/20240731231421_add_customer_notes/migration.sql
 
 ```sql
-/*
-  Warnings:
-
-  - You are about to drop the `User` table. If the table is not empty, all the data it contains will be lost.
-
-*/
--- DropTable
-PRAGMA foreign_keys=off;
-DROP TABLE "User";
-PRAGMA foreign_keys=on;
+-- AlterTable
+ALTER TABLE "Customer" ADD COLUMN "notes" TEXT;
 
 ```
 
@@ -2165,6 +2579,22 @@ PRAGMA defer_foreign_keys=OFF;
 
 ```
 
+# prisma/migrations/20240801190043_add_jobs_to_customer/migration.sql
+
+```sql
+/*
+  Warnings:
+
+  - You are about to drop the `User` table. If the table is not empty, all the data it contains will be lost.
+
+*/
+-- DropTable
+PRAGMA foreign_keys=off;
+DROP TABLE "User";
+PRAGMA foreign_keys=on;
+
+```
+
 # prisma/migrations/20240731230202_update_component_schema/migration.sql
 
 ```sql
@@ -2182,25 +2612,6 @@ DROP TABLE "Component";
 ALTER TABLE "new_Component" RENAME TO "Component";
 PRAGMA foreign_keys=ON;
 PRAGMA defer_foreign_keys=OFF;
-
-```
-
-# prisma/migrations/20240731222751_add_user_model/migration.sql
-
-```sql
--- CreateTable
-CREATE TABLE "User" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "name" TEXT NOT NULL,
-    "email" TEXT NOT NULL,
-    "password" TEXT NOT NULL,
-    "role" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
-);
-
--- CreateIndex
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
 ```
 
@@ -2259,12 +2670,127 @@ CREATE INDEX "_ComponentToJob_B_index" ON "_ComponentToJob"("B");
 
 ```
 
-# prisma/migrations/20240731231421_add_customer_notes/migration.sql
+# prisma/migrations/20240731222751_add_user_model/migration.sql
 
 ```sql
--- AlterTable
-ALTER TABLE "Customer" ADD COLUMN "notes" TEXT;
+-- CreateTable
+CREATE TABLE "User" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "password" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
 
+-- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+```
+
+# src/app/customers/new/page.tsx
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import CustomerForm from '@/components/CustomerForm';
+
+export default function NewCustomerPage() {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (formData: { name: string; email: string; phone: string; address: string }) => {
+    try {
+      const response = await fetch('/api/customers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create customer');
+      }
+
+      router.push('/customers');
+    } catch (err) {
+      setError('An error occurred while creating the customer. Please try again.');
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Add New Customer</h1>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
+      <CustomerForm onSubmit={handleSubmit} />
+    </div>
+  );
+}
+```
+
+# src/app/jobs/[id]/route.ts
+
+```ts
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const job = await prisma.job.findUnique({
+      where: { id: params.id },
+      include: {
+        components: true,
+      },
+    });
+
+    if (!job) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+    }
+
+    return NextResponse.json(job);
+  } catch (error) {
+    console.error('Failed to fetch job:', error);
+    return NextResponse.json({ error: 'Failed to fetch job' }, { status: 500 });
+  }
+}
+
+export async function PUT(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const body = await request.json();
+    const { customerId, status, scheduledAt, address, deliveryFee, installFee, monthlyRentalRate, notes, components } = body;
+
+    const updatedJob = await prisma.job.update({
+      where: { id: params.id },
+      data: {
+        customerId,
+        status,
+        scheduledAt: new Date(scheduledAt),
+        address,
+        deliveryFee: parseFloat(deliveryFee),
+        installFee: parseFloat(installFee),
+        monthlyRentalRate: parseFloat(monthlyRentalRate),
+        notes,
+        components: {
+          set: components.map((id: string) => ({ id }))
+        }
+      },
+    });
+
+    return NextResponse.json(updatedJob);
+  } catch (error) {
+    console.error('Failed to update job:', error);
+    return NextResponse.json({ error: 'Failed to update job' }, { status: 500 });
+  }
+}
 ```
 
 # src/app/jobs/new/page.tsx
@@ -2423,110 +2949,6 @@ export default function NewJobPage() {
 }
 ```
 
-# src/app/jobs/[id]/route.ts
-
-```ts
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  try {
-    const job = await prisma.job.findUnique({
-      where: { id: params.id },
-      include: {
-        components: true,
-      },
-    });
-
-    if (!job) {
-      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    }
-
-    return NextResponse.json(job);
-  } catch (error) {
-    console.error('Failed to fetch job:', error);
-    return NextResponse.json({ error: 'Failed to fetch job' }, { status: 500 });
-  }
-}
-
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  try {
-    const body = await request.json();
-    const { customerId, status, scheduledAt, address, deliveryFee, installFee, monthlyRentalRate, notes, components } = body;
-
-    const updatedJob = await prisma.job.update({
-      where: { id: params.id },
-      data: {
-        customerId,
-        status,
-        scheduledAt: new Date(scheduledAt),
-        address,
-        deliveryFee: parseFloat(deliveryFee),
-        installFee: parseFloat(installFee),
-        monthlyRentalRate: parseFloat(monthlyRentalRate),
-        notes,
-        components: {
-          set: components.map((id: string) => ({ id }))
-        }
-      },
-    });
-
-    return NextResponse.json(updatedJob);
-  } catch (error) {
-    console.error('Failed to update job:', error);
-    return NextResponse.json({ error: 'Failed to update job' }, { status: 500 });
-  }
-}
-```
-
-# src/app/customers/new/page.tsx
-
-```tsx
-'use client';
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import CustomerForm from '@/components/CustomerForm';
-
-export default function NewCustomerPage() {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (formData: { name: string; email: string; phone: string; address: string }) => {
-    try {
-      const response = await fetch('/api/customers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create customer');
-      }
-
-      router.push('/customers');
-    } catch (err) {
-      setError('An error occurred while creating the customer. Please try again.');
-      console.error(err);
-    }
-  };
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Add New Customer</h1>
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <span className="block sm:inline">{error}</span>
-        </div>
-      )}
-      <CustomerForm onSubmit={handleSubmit} />
-    </div>
-  );
-}
-```
-
 # src/app/inventory/new/page.tsx
 
 ```tsx
@@ -2582,6 +3004,185 @@ export default function NewComponentPage() {
     </div>
   );
 }
+```
+
+# src/app/api/pricing-variables/route.ts
+
+```ts
+// src/app/api/pricing-variables/route.ts
+
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET() {
+  try {
+    const pricingVariables = await prisma.pricingVariables.findFirst();
+    if (!pricingVariables) {
+      return NextResponse.json({ error: 'Pricing variables not found' }, { status: 404 });
+    }
+    return NextResponse.json(pricingVariables);
+  } catch (error) {
+    console.error('Failed to fetch pricing variables:', error);
+    return NextResponse.json({ error: 'Failed to fetch pricing variables' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { trailerRentalCost, perMileCost, rentalRatePerFoot, installRatePerSection, installRatePerLanding } = body;
+
+    const pricingVariables = await prisma.pricingVariables.upsert({
+      where: { id: 1 }, // Assuming we only have one set of pricing variables
+      update: {
+        trailerRentalCost,
+        perMileCost,
+        rentalRatePerFoot,
+        installRatePerSection,
+        installRatePerLanding,
+      },
+      create: {
+        trailerRentalCost,
+        perMileCost,
+        rentalRatePerFoot,
+        installRatePerSection,
+        installRatePerLanding,
+      },
+    });
+
+    return NextResponse.json(pricingVariables);
+  } catch (error) {
+    console.error('Failed to update pricing variables:', error);
+    return NextResponse.json({ error: 'Failed to update pricing variables' }, { status: 500 });
+  }
+}
+```
+
+# src/app/api/jobs/route.ts
+
+```ts
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '10');
+  const sortBy = searchParams.get('sortBy') || 'scheduledAt';
+  const sortOrder = searchParams.get('sortOrder') || 'desc';
+  const filterStatus = searchParams.get('filterStatus') || '';
+
+  const skip = (page - 1) * limit;
+
+  try {
+    const where = filterStatus ? { status: filterStatus } : {};
+
+    const [jobs, totalCount] = await Promise.all([
+      prisma.job.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder as 'asc' | 'desc' },
+        skip,
+        take: limit,
+        include: {
+          customer: {
+            select: { name: true },
+          },
+          components: {
+            select: { id: true, type: true, size: true },
+          },
+        },
+      }),
+      prisma.job.count({ where }),
+    ]);
+
+    const formattedJobs = jobs.map(job => ({
+      ...job,
+      customerName: job.customer.name,
+    }));
+
+    return NextResponse.json({
+      jobs: formattedJobs,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: page,
+    });
+  } catch (error) {
+    console.error('Failed to fetch jobs:', error);
+    return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { customerId, status, scheduledAt, address, deliveryFee, installFee, monthlyRentalRate, notes, components } = body;
+
+    // Validate input
+    if (!customerId || !status || !scheduledAt || !address) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // Check if all components are available
+    const componentIds = components.map((id: string) => id);
+    const existingComponents = await prisma.component.findMany({
+      where: { id: { in: componentIds } },
+    });
+
+    const unavailableComponents = existingComponents.filter(
+      component => component.status !== 'AVAILABLE'
+    );
+
+    if (unavailableComponents.length > 0) {
+      return NextResponse.json({
+        error: 'Some components are not available',
+        unavailableComponents: unavailableComponents.map(c => c.id),
+      }, { status: 400 });
+    }
+
+    // Determine component status based on job status
+    const componentStatus = status === 'INSTALLED' ? 'INSTALLED' : 'RESERVED';
+    const componentLocation = status === 'INSTALLED' ? address : 'Warehouse';
+
+    const newJob = await prisma.job.create({
+      data: {
+        customerId,
+        status,
+        scheduledAt: new Date(scheduledAt),
+        address,
+        deliveryFee: parseFloat(deliveryFee) || 0,
+        installFee: parseFloat(installFee) || 0,
+        monthlyRentalRate: parseFloat(monthlyRentalRate) || 0,
+        notes,
+        components: {
+          connect: components.map((id: string) => ({ id }))
+        }
+      },
+      include: {
+        customer: {
+          select: { name: true },
+        },
+        components: true,
+      },
+    });
+
+    
+    // Update component statuses and locations
+    await prisma.component.updateMany({
+      where: { id: { in: componentIds } },
+      data: { status: componentStatus, location: componentLocation },
+    });
+
+    const formattedJob = {
+      ...newJob,
+      customerName: newJob.customer.name,
+    };
+
+    return NextResponse.json(formattedJob, { status: 201 });
+  } catch (error) {
+    console.error('Failed to create job:', error);
+    return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
+  }
+}
+
 ```
 
 # src/app/api/customers/route.ts
@@ -2794,185 +3395,6 @@ export async function PATCH(request: Request) {
 }
 ```
 
-# src/app/api/pricing-variables/route.ts
-
-```ts
-// src/app/api/pricing-variables/route.ts
-
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-
-export async function GET() {
-  try {
-    const pricingVariables = await prisma.pricingVariables.findFirst();
-    if (!pricingVariables) {
-      return NextResponse.json({ error: 'Pricing variables not found' }, { status: 404 });
-    }
-    return NextResponse.json(pricingVariables);
-  } catch (error) {
-    console.error('Failed to fetch pricing variables:', error);
-    return NextResponse.json({ error: 'Failed to fetch pricing variables' }, { status: 500 });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { trailerRentalCost, perMileCost, rentalRatePerFoot, installRatePerSection, installRatePerLanding } = body;
-
-    const pricingVariables = await prisma.pricingVariables.upsert({
-      where: { id: 1 }, // Assuming we only have one set of pricing variables
-      update: {
-        trailerRentalCost,
-        perMileCost,
-        rentalRatePerFoot,
-        installRatePerSection,
-        installRatePerLanding,
-      },
-      create: {
-        trailerRentalCost,
-        perMileCost,
-        rentalRatePerFoot,
-        installRatePerSection,
-        installRatePerLanding,
-      },
-    });
-
-    return NextResponse.json(pricingVariables);
-  } catch (error) {
-    console.error('Failed to update pricing variables:', error);
-    return NextResponse.json({ error: 'Failed to update pricing variables' }, { status: 500 });
-  }
-}
-```
-
-# src/app/api/jobs/route.ts
-
-```ts
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get('page') || '1');
-  const limit = parseInt(searchParams.get('limit') || '10');
-  const sortBy = searchParams.get('sortBy') || 'scheduledAt';
-  const sortOrder = searchParams.get('sortOrder') || 'desc';
-  const filterStatus = searchParams.get('filterStatus') || '';
-
-  const skip = (page - 1) * limit;
-
-  try {
-    const where = filterStatus ? { status: filterStatus } : {};
-
-    const [jobs, totalCount] = await Promise.all([
-      prisma.job.findMany({
-        where,
-        orderBy: { [sortBy]: sortOrder as 'asc' | 'desc' },
-        skip,
-        take: limit,
-        include: {
-          customer: {
-            select: { name: true },
-          },
-          components: {
-            select: { id: true, type: true, size: true },
-          },
-        },
-      }),
-      prisma.job.count({ where }),
-    ]);
-
-    const formattedJobs = jobs.map(job => ({
-      ...job,
-      customerName: job.customer.name,
-    }));
-
-    return NextResponse.json({
-      jobs: formattedJobs,
-      totalPages: Math.ceil(totalCount / limit),
-      currentPage: page,
-    });
-  } catch (error) {
-    console.error('Failed to fetch jobs:', error);
-    return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { customerId, status, scheduledAt, address, deliveryFee, installFee, monthlyRentalRate, notes, components } = body;
-
-    // Validate input
-    if (!customerId || !status || !scheduledAt || !address) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    // Check if all components are available
-    const componentIds = components.map((id: string) => id);
-    const existingComponents = await prisma.component.findMany({
-      where: { id: { in: componentIds } },
-    });
-
-    const unavailableComponents = existingComponents.filter(
-      component => component.status !== 'AVAILABLE'
-    );
-
-    if (unavailableComponents.length > 0) {
-      return NextResponse.json({
-        error: 'Some components are not available',
-        unavailableComponents: unavailableComponents.map(c => c.id),
-      }, { status: 400 });
-    }
-
-    // Determine component status based on job status
-    const componentStatus = status === 'INSTALLED' ? 'INSTALLED' : 'RESERVED';
-    const componentLocation = status === 'INSTALLED' ? address : 'Warehouse';
-
-    const newJob = await prisma.job.create({
-      data: {
-        customerId,
-        status,
-        scheduledAt: new Date(scheduledAt),
-        address,
-        deliveryFee: parseFloat(deliveryFee) || 0,
-        installFee: parseFloat(installFee) || 0,
-        monthlyRentalRate: parseFloat(monthlyRentalRate) || 0,
-        notes,
-        components: {
-          connect: components.map((id: string) => ({ id }))
-        }
-      },
-      include: {
-        customer: {
-          select: { name: true },
-        },
-        components: true,
-      },
-    });
-
-    
-    // Update component statuses and locations
-    await prisma.component.updateMany({
-      where: { id: { in: componentIds } },
-      data: { status: componentStatus, location: componentLocation },
-    });
-
-    const formattedJob = {
-      ...newJob,
-      customerName: newJob.customer.name,
-    };
-
-    return NextResponse.json(formattedJob, { status: 201 });
-  } catch (error) {
-    console.error('Failed to create job:', error);
-    return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
-  }
-}
-
-```
-
 # src/app/api/calculate-distance/route.ts
 
 ```ts
@@ -3005,6 +3427,279 @@ export async function POST(request: Request) {
     console.error('Error calculating distance:', error);
     return NextResponse.json({ error: 'Failed to calculate distance' }, { status: 500 });
   }
+}
+```
+
+# src/app/customers/[id]/edit/page.tsx
+
+```tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import CustomerForm from '@/components/CustomerForm';
+
+export default function EditCustomerPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const [customer, setCustomer] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCustomer = async () => {
+      try {
+        const response = await fetch(`/api/customers/${params.id}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch customer');
+        }
+        const data = await response.json();
+        setCustomer(data);
+      } catch (err) {
+        setError('Failed to load customer data. Please try again.');
+        console.error(err);
+      }
+    };
+
+    fetchCustomer();
+  }, [params.id]);
+
+  const handleSubmit = async (formData: { name: string; email: string; phone: string; address: string; notes: string }) => {
+    try {
+      const response = await fetch(`/api/customers/${params.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update customer');
+      }
+
+      router.push('/customers');
+    } catch (err) {
+      setError('An error occurred while updating the customer. Please try again.');
+      console.error(err);
+    }
+  };
+
+  if (error) {
+    return <div className="container mx-auto px-4 py-8 text-red-500">{error}</div>;
+  }
+
+  if (!customer) {
+    return <div className="container mx-auto px-4 py-8">Loading...</div>;
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Edit Customer</h1>
+      <CustomerForm initialData={customer} onSubmit={handleSubmit} />
+    </div>
+  );
+}
+```
+
+# src/app/jobs/[id]/execute/page.tsx
+
+```tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import JobExecutionWizard from '@/components/JobExecutionWizard';
+
+export default function JobExecutionPage({ params }: { params: { id: string } }) {
+  const [job, setJob] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    const fetchJob = async () => {
+      try {
+        const response = await fetch(`/api/jobs/${params.id}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch job');
+        }
+        const data = await response.json();
+        setJob(data);
+      } catch (err) {
+        setError('Failed to load job data. Please try again.');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchJob();
+  }, [params.id]);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error}</div>;
+  if (!job) return <div>Job not found</div>;
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Execute Job</h1>
+      <JobExecutionWizard job={job} />
+    </div>
+  );
+}
+```
+
+# src/app/inventory/[id]/edit/page.tsx
+
+```tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import ComponentForm from '@/components/ComponentForm';
+import { ComponentStatus } from '@/lib/constants';
+
+interface Component {
+  id: string;
+  type: string;
+  size: string;
+  status: string;
+  location: string;
+}
+
+export default function EditComponentPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const [component, setComponent] = useState<Component | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchComponent = async () => {
+      try {
+        const response = await fetch(`/api/components/${params.id}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch component');
+        }
+        const data = await response.json();
+        setComponent(data);
+      } catch (err) {
+        setError('Failed to load component data. Please try again.');
+        console.error(err);
+      }
+    };
+
+    fetchComponent();
+  }, [params.id]);
+
+  const handleSubmit = async (formData: Component) => {
+    try {
+      const response = await fetch(`/api/components/${params.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update component');
+      }
+
+      setSuccess('Component updated successfully');
+      setTimeout(() => {
+        router.push('/inventory');
+      }, 2000);
+    } catch (err) {
+      setError('An error occurred while updating the component. Please try again.');
+      console.error(err);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (window.confirm('Are you sure you want to delete this component?')) {
+      try {
+        const response = await fetch(`/api/components/${params.id}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to delete component');
+        }
+
+        setSuccess('Component deleted successfully');
+        setTimeout(() => {
+          router.push('/inventory');
+        }, 2000);
+      } catch (err) {
+        setError('An error occurred while deleting the component. Please try again.');
+        console.error(err);
+      }
+    }
+  };
+
+  const handleSetMaintenance = async () => {
+    try {
+      const response = await fetch('/api/components', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: params.id, action: 'setMaintenance' }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to set component to maintenance');
+      }
+
+      setSuccess('Component set to maintenance successfully');
+      setTimeout(() => {
+        router.push('/inventory');
+      }, 2000);
+    } catch (err) {
+      setError('An error occurred while setting the component to maintenance. Please try again.');
+      console.error(err);
+    }
+  };
+
+  if (error) {
+    return <div className="container mx-auto px-4 py-8 text-red-500">{error}</div>;
+  }
+
+  if (!component) {
+    return <div className="container mx-auto px-4 py-8">Loading...</div>;
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Edit Component</h1>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <span className="block sm:inline">{success}</span>
+        </div>
+      )}
+      <ComponentForm initialData={component} onSubmit={handleSubmit} />
+      <div className="mt-6 space-y-2">
+        <button
+          onClick={handleDelete}
+          className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
+        >
+          Delete Component
+        </button>
+        {component.status !== ComponentStatus.MAINTENANCE && (
+          <button
+            onClick={handleSetMaintenance}
+            className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded"
+          >
+            Set to Maintenance
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 ```
 
@@ -3189,336 +3884,6 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
 }
 ```
 
-# src/app/inventory/[id]/edit/page.tsx
-
-```tsx
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import ComponentForm from '@/components/ComponentForm';
-import { ComponentStatus } from '@/lib/constants';
-
-interface Component {
-  id: string;
-  type: string;
-  size: string;
-  status: string;
-  location: string;
-}
-
-export default function EditComponentPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
-  const [component, setComponent] = useState<Component | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchComponent = async () => {
-      try {
-        const response = await fetch(`/api/components/${params.id}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch component');
-        }
-        const data = await response.json();
-        setComponent(data);
-      } catch (err) {
-        setError('Failed to load component data. Please try again.');
-        console.error(err);
-      }
-    };
-
-    fetchComponent();
-  }, [params.id]);
-
-  const handleSubmit = async (formData: Component) => {
-    try {
-      const response = await fetch(`/api/components/${params.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update component');
-      }
-
-      setSuccess('Component updated successfully');
-      setTimeout(() => {
-        router.push('/inventory');
-      }, 2000);
-    } catch (err) {
-      setError('An error occurred while updating the component. Please try again.');
-      console.error(err);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (window.confirm('Are you sure you want to delete this component?')) {
-      try {
-        const response = await fetch(`/api/components/${params.id}`, {
-          method: 'DELETE',
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to delete component');
-        }
-
-        setSuccess('Component deleted successfully');
-        setTimeout(() => {
-          router.push('/inventory');
-        }, 2000);
-      } catch (err) {
-        setError('An error occurred while deleting the component. Please try again.');
-        console.error(err);
-      }
-    }
-  };
-
-  const handleSetMaintenance = async () => {
-    try {
-      const response = await fetch('/api/components', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ id: params.id, action: 'setMaintenance' }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to set component to maintenance');
-      }
-
-      setSuccess('Component set to maintenance successfully');
-      setTimeout(() => {
-        router.push('/inventory');
-      }, 2000);
-    } catch (err) {
-      setError('An error occurred while setting the component to maintenance. Please try again.');
-      console.error(err);
-    }
-  };
-
-  if (error) {
-    return <div className="container mx-auto px-4 py-8 text-red-500">{error}</div>;
-  }
-
-  if (!component) {
-    return <div className="container mx-auto px-4 py-8">Loading...</div>;
-  }
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Edit Component</h1>
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <span className="block sm:inline">{error}</span>
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <span className="block sm:inline">{success}</span>
-        </div>
-      )}
-      <ComponentForm initialData={component} onSubmit={handleSubmit} />
-      <div className="mt-6 space-y-2">
-        <button
-          onClick={handleDelete}
-          className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
-        >
-          Delete Component
-        </button>
-        {component.status !== ComponentStatus.MAINTENANCE && (
-          <button
-            onClick={handleSetMaintenance}
-            className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded"
-          >
-            Set to Maintenance
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-```
-
-# src/app/customers/[id]/edit/page.tsx
-
-```tsx
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import CustomerForm from '@/components/CustomerForm';
-
-export default function EditCustomerPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
-  const [customer, setCustomer] = useState(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchCustomer = async () => {
-      try {
-        const response = await fetch(`/api/customers/${params.id}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch customer');
-        }
-        const data = await response.json();
-        setCustomer(data);
-      } catch (err) {
-        setError('Failed to load customer data. Please try again.');
-        console.error(err);
-      }
-    };
-
-    fetchCustomer();
-  }, [params.id]);
-
-  const handleSubmit = async (formData: { name: string; email: string; phone: string; address: string; notes: string }) => {
-    try {
-      const response = await fetch(`/api/customers/${params.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update customer');
-      }
-
-      router.push('/customers');
-    } catch (err) {
-      setError('An error occurred while updating the customer. Please try again.');
-      console.error(err);
-    }
-  };
-
-  if (error) {
-    return <div className="container mx-auto px-4 py-8 text-red-500">{error}</div>;
-  }
-
-  if (!customer) {
-    return <div className="container mx-auto px-4 py-8">Loading...</div>;
-  }
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Edit Customer</h1>
-      <CustomerForm initialData={customer} onSubmit={handleSubmit} />
-    </div>
-  );
-}
-```
-
-# src/app/api/customers/[id]/route.ts
-
-```ts
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  try {
-    const customer = await prisma.customer.findUnique({
-      where: { id: params.id },
-    });
-
-    if (!customer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
-    }
-
-    return NextResponse.json(customer);
-  } catch (error) {
-    console.error('Failed to fetch customer:', error);
-    return NextResponse.json({ error: 'Failed to fetch customer' }, { status: 500 });
-  }
-}
-
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  try {
-    const body = await request.json();
-    const { name, email, phone, address, notes } = body;
-
-    const updatedCustomer = await prisma.customer.update({
-      where: { id: params.id },
-      data: {
-        name,
-        email,
-        phone,
-        address,
-        notes,
-      },
-    });
-
-    return NextResponse.json(updatedCustomer);
-  } catch (error) {
-    console.error('Failed to update customer:', error);
-    return NextResponse.json({ error: 'Failed to update customer' }, { status: 500 });
-  }
-}
-
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  try {
-    await prisma.customer.delete({
-      where: { id: params.id },
-    });
-
-    return new NextResponse(null, { status: 204 });
-  } catch (error) {
-    console.error('Failed to delete customer:', error);
-    return NextResponse.json({ error: 'Failed to delete customer' }, { status: 500 });
-  }
-}
-```
-
-# src/app/api/components/nextId/route.tsx
-
-```tsx
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const prefix = searchParams.get('prefix');
-  const size = searchParams.get('size');
-
-  if (!prefix || !size) {
-    return NextResponse.json({ error: 'Missing prefix or size' }, { status: 400 });
-  }
-
-  try {
-    const components = await prisma.component.findMany({
-      where: {
-        id: {
-          startsWith: `${prefix}_${size}_`,
-        },
-      },
-      orderBy: {
-        id: 'desc',
-      },
-      take: 1,
-    });
-
-    let nextNumber = 1;
-    if (components.length > 0) {
-      const lastId = components[0].id;
-      const lastNumber = parseInt(lastId.split('_').pop() || '0', 10);
-      nextNumber = lastNumber + 1;
-    }
-
-    const nextId = `${prefix}_${size}_${nextNumber.toString().padStart(2, '0')}`;
-
-    return NextResponse.json({ nextId });
-  } catch (error) {
-    console.error('Failed to generate next ID:', error);
-    return NextResponse.json({ error: 'Failed to generate next ID' }, { status: 500 });
-  }
-}
-```
-
 # src/app/api/jobs/[id]/route.ts
 
 ```ts
@@ -3610,6 +3975,144 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   } catch (error) {
     console.error('Failed to delete job:', error);
     return NextResponse.json({ error: 'Failed to delete job' }, { status: 500 });
+  }
+}
+```
+
+# src/app/api/customers/web-form/route.ts
+
+```ts
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { 'Customer Name': fullName, Email, Phone, Address, Notes } = body;
+
+    // Split the full name into first and last name
+    const [firstName, ...lastNameParts] = fullName.split(' ');
+    const lastName = lastNameParts.join(' ');
+
+    const newCustomer = await prisma.customer.create({
+      data: {
+        name: fullName,
+        email: Email,
+        phone: Phone,
+        address: Address,
+        notes: Notes,
+      },
+    });
+
+    return NextResponse.json(newCustomer, { status: 201 });
+  } catch (error) {
+    console.error('Failed to create customer:', error);
+    return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 });
+  }
+}
+```
+
+# src/app/api/components/nextId/route.tsx
+
+```tsx
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const prefix = searchParams.get('prefix');
+  const size = searchParams.get('size');
+
+  if (!prefix || !size) {
+    return NextResponse.json({ error: 'Missing prefix or size' }, { status: 400 });
+  }
+
+  try {
+    const components = await prisma.component.findMany({
+      where: {
+        id: {
+          startsWith: `${prefix}_${size}_`,
+        },
+      },
+      orderBy: {
+        id: 'desc',
+      },
+      take: 1,
+    });
+
+    let nextNumber = 1;
+    if (components.length > 0) {
+      const lastId = components[0].id;
+      const lastNumber = parseInt(lastId.split('_').pop() || '0', 10);
+      nextNumber = lastNumber + 1;
+    }
+
+    const nextId = `${prefix}_${size}_${nextNumber.toString().padStart(2, '0')}`;
+
+    return NextResponse.json({ nextId });
+  } catch (error) {
+    console.error('Failed to generate next ID:', error);
+    return NextResponse.json({ error: 'Failed to generate next ID' }, { status: 500 });
+  }
+}
+```
+
+# src/app/api/customers/[id]/route.ts
+
+```ts
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!customer) {
+      return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
+    }
+
+    return NextResponse.json(customer);
+  } catch (error) {
+    console.error('Failed to fetch customer:', error);
+    return NextResponse.json({ error: 'Failed to fetch customer' }, { status: 500 });
+  }
+}
+
+export async function PUT(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const body = await request.json();
+    const { name, email, phone, address, notes } = body;
+
+    const updatedCustomer = await prisma.customer.update({
+      where: { id: params.id },
+      data: {
+        name,
+        email,
+        phone,
+        address,
+        notes,
+      },
+    });
+
+    return NextResponse.json(updatedCustomer);
+  } catch (error) {
+    console.error('Failed to update customer:', error);
+    return NextResponse.json({ error: 'Failed to update customer' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+  try {
+    await prisma.customer.delete({
+      where: { id: params.id },
+    });
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    console.error('Failed to delete customer:', error);
+    return NextResponse.json({ error: 'Failed to delete customer' }, { status: 500 });
   }
 }
 ```

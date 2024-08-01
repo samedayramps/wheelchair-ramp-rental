@@ -5,6 +5,36 @@ import AddressNavigation from './AddressNavigation';
 import InstallationTimer from './InstallationTimer';
 import PhotoCapture from './PhotoCapture';
 
+interface Component {
+  id: string;
+  type: string;
+  size: string;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+  address: string;
+}
+
+interface Job {
+  id: string;
+  customerId: string;
+  customer: Customer;
+  status: string;
+  scheduledAt: string;
+  address: string;
+  deliveryFee: number;
+  installFee: number;
+  monthlyRentalRate: number;
+  notes: string;
+  components: Component[];
+}
+
+interface JobExecutionWizardProps {
+  job: Job;
+}
+
 const steps = [
   'Component Check',
   'Customer Notification',
@@ -13,15 +43,15 @@ const steps = [
   'Photo Capture',
 ];
 
-const JobExecutionWizard = ({ job }) => {
+const JobExecutionWizard: React.FC<JobExecutionWizardProps> = ({ job }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [executionData, setExecutionData] = useState({
     componentsLoaded: false,
     customerNotified: false,
-    arrivalTime: null,
-    installationStartTime: null,
-    installationEndTime: null,
-    photos: [],
+    arrivalTime: null as Date | null,
+    installationStartTime: null as Date | null,
+    installationEndTime: null as Date | null,
+    photos: [] as string[],
   });
 
   const handleNext = () => {
@@ -46,9 +76,9 @@ const JobExecutionWizard = ({ job }) => {
       case 2:
         return <AddressNavigation job={job} onComplete={(arrivalTime) => setExecutionData({ ...executionData, arrivalTime })} />;
       case 3:
-        return <InstallationTimer onComplete={(startTime, endTime) => setExecutionData({ ...executionData, installationStartTime: startTime, installationEndTime: endTime })} />;
+        return <InstallationTimer onComplete={(startTime: Date, endTime: Date) => setExecutionData({ ...executionData, installationStartTime: startTime, installationEndTime: endTime })} />;
       case 4:
-        return <PhotoCapture onComplete={(photos) => setExecutionData({ ...executionData, photos })} />;
+        return <PhotoCapture onComplete={(photos: string[]) => setExecutionData({ ...executionData, photos })} />;
       default:
         return null;
     }

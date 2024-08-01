@@ -1,11 +1,24 @@
 import React, { useState } from 'react';
 
-const ComponentCheckList = ({ job, onComplete }) => {
+interface Component {
+  id: string;
+  type: string;
+  size: string;
+}
+
+interface ComponentCheckListProps {
+  job: {
+    components: Component[];
+  };
+  onComplete: () => void;
+}
+
+const ComponentCheckList: React.FC<ComponentCheckListProps> = ({ job, onComplete }) => {
   const [checked, setChecked] = useState<string[]>([]);
 
   const handleCheck = (componentId: string) => {
-    setChecked(prev => 
-      prev.includes(componentId) 
+    setChecked(prev =>
+      prev.includes(componentId)
         ? prev.filter(id => id !== componentId)
         : [...prev, componentId]
     );

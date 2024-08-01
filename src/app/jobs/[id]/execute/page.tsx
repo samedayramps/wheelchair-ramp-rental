@@ -4,10 +4,36 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import JobExecutionWizard from '@/components/JobExecutionWizard';
 
+interface Component {
+  id: string;
+  type: string;
+  size: string;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+  address: string;
+}
+
+interface Job {
+  id: string;
+  customerId: string;
+  customer: Customer;
+  status: string;
+  scheduledAt: string;
+  address: string;
+  deliveryFee: number;
+  installFee: number;
+  monthlyRentalRate: number;
+  notes: string;
+  components: Component[];
+}
+
 export default function JobExecutionPage({ params }: { params: { id: string } }) {
-  const [job, setJob] = useState(null);
+  const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -17,7 +43,7 @@ export default function JobExecutionPage({ params }: { params: { id: string } })
         if (!response.ok) {
           throw new Error('Failed to fetch job');
         }
-        const data = await response.json();
+        const data: Job = await response.json();
         setJob(data);
       } catch (err) {
         setError('Failed to load job data. Please try again.');

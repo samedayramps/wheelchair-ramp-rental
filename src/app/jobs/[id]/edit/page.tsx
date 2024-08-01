@@ -29,6 +29,7 @@ interface PricingVariables {
 interface Job {
   id: string;
   customerId: string;
+  customer: Customer;
   status: string;
   scheduledAt: string;
   address: string;
@@ -103,7 +104,17 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
     Promise.all([fetchJob(), fetchCustomers(), fetchAvailableComponents(), fetchPricingVariables()]);
   }, [fetchJob, fetchCustomers, fetchAvailableComponents, fetchPricingVariables]);
 
-  const handleSubmit = async (formData: Omit<Job, 'id'>) => {
+  const handleSubmit = async (formData: {
+    customerId: string;
+    status: string;
+    scheduledAt: string;
+    address: string;
+    deliveryFee: number;
+    installFee: number;
+    monthlyRentalRate: number;
+    notes: string;
+    components: string[];
+  }) => {
     try {
       const response = await fetch(`/api/jobs/${params.id}`, {
         method: 'PUT',
@@ -115,12 +126,12 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
           id: params.id,
         }),
       });
-    
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to update job');
       }
-    
+
       router.push('/jobs');
     } catch (err) {
       if (err instanceof Error) {
@@ -157,7 +168,7 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
 
   const initialData = {
     ...job,
-    components: job.components.map(comp => comp.id)
+    components: job.components.map(comp => comp.id),
   };
 
   return (

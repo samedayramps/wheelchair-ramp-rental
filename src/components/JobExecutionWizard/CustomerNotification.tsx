@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
 
-const CustomerNotification = ({ job, onComplete }) => {
+interface CustomerNotificationProps {
+  job: {
+    customer: {
+      name: string;
+    };
+    address: string;
+  };
+  onComplete: () => void;
+}
+
+const CustomerNotification: React.FC<CustomerNotificationProps> = ({ job, onComplete }) => {
   const [notificationSent, setNotificationSent] = useState(false);
 
   const sendNotification = async () => {
