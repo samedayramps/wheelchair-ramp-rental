@@ -41,13 +41,13 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    // Check if the component is assigned to any job
     const component = await prisma.component.findUnique({
       where: { id: params.id },
       include: { jobs: true }
     });
 
-    if (component && component.jobs && Array.isArray(component.jobs) && component.jobs.length > 0) {
+    // @ts-ignore
+    if (component?.jobs?.length > 0) {
       return NextResponse.json({ error: 'Cannot delete component assigned to a job' }, { status: 400 });
     }
 
