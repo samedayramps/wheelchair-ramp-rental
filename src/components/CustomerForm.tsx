@@ -1,5 +1,3 @@
-/// <reference types="@types/google.maps" />
-
 import React, { useState, useEffect, useRef } from 'react';
 
 interface CustomerFormProps {

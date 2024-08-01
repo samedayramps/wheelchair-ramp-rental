@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { JobStatus } from "@/lib/constants";
+import UpcomingJobs from "@/components/UpcomingJobs";
 
 async function getDashboardData() {
   const customerCount = await prisma.customer.count();
@@ -17,11 +18,28 @@ async function getDashboardData() {
     }
   });
 
-  return { customerCount, activeJobCount, availableComponentCount };
+  const upcomingJobs = await prisma.job.findMany({
+    where: {
+      status: JobStatus.SCHEDULED,
+    },
+    orderBy: {
+      scheduledAt: 'asc',
+    },
+    take: 5,
+    include: {
+      customer: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  return { customerCount, activeJobCount, availableComponentCount, upcomingJobs };
 }
 
 export default async function DashboardPage() {
-  const { customerCount, activeJobCount, availableComponentCount } = await getDashboardData();
+  const { customerCount, activeJobCount, availableComponentCount, upcomingJobs } = await getDashboardData();
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -30,6 +48,9 @@ export default async function DashboardPage() {
         <DashboardCard title="Total Customers" value={customerCount} />
         <DashboardCard title="Active Jobs" value={activeJobCount} />
         <DashboardCard title="Available Components" value={availableComponentCount} />
+      </div>
+      <div className="mb-8">
+        <UpcomingJobs jobs={upcomingJobs} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <QuickActionCard title="Customers" actions={[
