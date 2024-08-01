@@ -43,10 +43,10 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   try {
     const component = await prisma.component.findUnique({
       where: { id: params.id },
-      include: { jobs: true }
+      include: { jobs: true },
     });
 
-    if (component && Array.isArray(component.jobs) && component.jobs.length > 0) {
+    if (component?.jobs && component.jobs.length > 0) {
       return NextResponse.json({ error: 'Cannot delete component assigned to a job' }, { status: 400 });
     }
 
